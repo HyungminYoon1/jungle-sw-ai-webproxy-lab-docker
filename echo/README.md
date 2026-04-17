@@ -17,6 +17,44 @@
 - `echo.c`, `echo.h`: 공통 에코 처리 함수
 - `Makefile`: 학습용 빌드 스크립트
 
+## 빌드 방법
+
+`echo/` 디렉터리에서 아래 명령으로 빌드합니다.
+
+```bash
+cd /workspaces/jungle-sw-ai-webproxy-lab-docker/echo
+make
+```
+
+빌드가 완료되면 다음 실행 파일이 생성됩니다.
+
+- `echoserveri`
+- `echoclient`
+
+빌드 산출물을 지우려면 아래 명령을 사용합니다.
+
+```bash
+make clean
+```
+
+## 실행 방법
+
+1. 먼저 서버를 실행합니다.
+
+```bash
+./echoserveri 5000
+```
+
+2. 다른 터미널에서 클라이언트를 실행합니다.
+
+```bash
+./echoclient localhost 5000
+```
+
+3. 클라이언트 터미널에 문자열을 입력하면 서버가 같은 내용을 다시 돌려줍니다.
+
+`echo.c`는 단독 실행 파일이 아니라 서버가 호출하는 공통 함수 파일이므로, 직접 실행하는 대상은 아닙니다.
+
 ## 기록하면 좋은 내용
 
 - 서버 시작 순서와 주요 시스템 콜 정리

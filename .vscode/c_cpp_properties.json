@@ -5,12 +5,17 @@
             "name": "Linux",
             "compilerPath": "/usr/bin/gcc",
             "intelliSenseMode": "linux-gcc-x64",
-            "cStandard": "c17",
+            "cStandard": "gnu17",
             "cppStandard": "c++17",
+            "defines": [
+                "_DEFAULT_SOURCE",
+                "_POSIX_C_SOURCE=200809L"
+            ],
             "includePath": [
                 "${workspaceFolder}",
                 "${workspaceFolder}/echo",
                 "${workspaceFolder}/webproxy-lab",
+                "${workspaceFolder}/webproxy-lab/.proxy",
                 "${workspaceFolder}/webproxy-lab/tiny",
                 "${workspaceFolder}/**"
             ],
@@ -19,6 +24,7 @@
                     "${workspaceFolder}",
                     "${workspaceFolder}/echo",
                     "${workspaceFolder}/webproxy-lab",
+                    "${workspaceFolder}/webproxy-lab/.proxy",
                     "${workspaceFolder}/webproxy-lab/tiny"
                 ],
                 "limitSymbolsToIncludedHeaders": true
