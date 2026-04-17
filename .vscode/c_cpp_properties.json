@@ -1,0 +1,28 @@
+{
+    "version": 4,
+    "configurations": [
+        {
+            "name": "Linux",
+            "compilerPath": "/usr/bin/gcc",
+            "intelliSenseMode": "linux-gcc-x64",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "includePath": [
+                "${workspaceFolder}",
+                "${workspaceFolder}/echo",
+                "${workspaceFolder}/webproxy-lab",
+                "${workspaceFolder}/webproxy-lab/tiny",
+                "${workspaceFolder}/**"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}",
+                    "${workspaceFolder}/echo",
+                    "${workspaceFolder}/webproxy-lab",
+                    "${workspaceFolder}/webproxy-lab/tiny"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
+        }
+    ]
+}
