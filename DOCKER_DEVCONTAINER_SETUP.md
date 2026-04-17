@@ -70,6 +70,13 @@ webproxy_lab_docker/
 │   ├── launch.json            # 디버깅 설정 (F5 실행용)
 │   └── tasks.json             # 컴파일 자동화 설정
 │
+├── echo/
+│   ├── echoclient.c           # CSAPP 11장 echo 클라이언트 학습 코드
+│   ├── echoserveri.c          # CSAPP 11장 순차 echo 서버 학습 코드
+│   ├── echo.c                 # 공통 echo 처리 함수
+│   ├── Makefile               # echo 실습용 빌드 파일
+│   └── README.md              # echo 학습 기록 문서
+│
 ├── webproxy-lab
 │   ├── tiny                    # tiny 웹 서버 구현 폴더
 │   │  ├── cgi-bin              # tiny 웹 서버를 테스트하기 위한 동적 컨텐츠를 구현하기 위한 폴더
@@ -81,6 +88,10 @@ webproxy_lab_docker/
 │
 └── DOCKER_DEVCONTAINER_SETUP.md  # 설치 및 사용법 설명 문서
 ```
+---
+
+`echo/` 디렉터리는 필수 제출물이라기보다 CSAPP 11장의 echo 서버/클라이언트 예제를 학습하고 기록하기 위한 보조 공간입니다. 실제 tiny/proxy 과제 구현은 `webproxy-lab/` 아래에서 진행합니다.
+
 ---
 
 ## 5. VSCode에서 해당 프로젝트 폴더 열기
