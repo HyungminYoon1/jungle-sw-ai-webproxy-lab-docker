@@ -64,6 +64,10 @@ dkms.conf
 /webproxy-lab/.proxy/
 /webproxy-lab/.noproxy/
 
+# Echo lab build artifacts
+/echo/echoclient
+/echo/echoserveri
+
 # Editor settings and temp files
 .idea/
 *.swp
