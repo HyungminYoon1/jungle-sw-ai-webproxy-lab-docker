@@ -10,13 +10,13 @@ all: $(TARGETS)
 csapp.o: ../webproxy-lab/csapp.c ../webproxy-lab/csapp.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c ../webproxy-lab/csapp.c -o csapp.o
 
-echo.o: echo.c echo.h ../webproxy-lab/csapp.h
+echo.o: echo.c ../webproxy-lab/csapp.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c echo.c
 
 echoclient.o: echoclient.c ../webproxy-lab/csapp.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c echoclient.c
 
-echoserveri.o: echoserveri.c echo.h ../webproxy-lab/csapp.h
+echoserveri.o: echoserveri.c ../webproxy-lab/csapp.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c echoserveri.c
 
 echoclient: echoclient.o csapp.o
