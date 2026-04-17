@@ -1,10 +1,10 @@
 /* $begin tinymain */
 /*
- * tiny.c - A simple, iterative HTTP/1.0 Web server that uses the
- *     GET method to serve static and dynamic content.
+ * tiny.c - GET 메서드를 사용해 정적 및 동적 콘텐츠를 제공하는
+ *     단순한 반복형 HTTP/1.0 웹 서버
  *
- * Updated 11/2019 droh
- *   - Fixed sprintf() aliasing issue in serve_static(), and clienterror().
+ * 2019/11 droh 수정
+ *   - serve_static()와 clienterror()의 sprintf() 별칭 문제 수정
  */
 #include "csapp.h"
 
@@ -24,7 +24,7 @@ int main(int argc, char **argv)
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
 
-  /* Check command line args */
+  /* 명령행 인자 확인 */
   if (argc != 2)
   {
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -36,11 +36,11 @@ int main(int argc, char **argv)
   {
     clientlen = sizeof(clientaddr);
     connfd = Accept(listenfd, (SA *)&clientaddr,
-                    &clientlen); // line:netp:tiny:accept
+                    &clientlen); // 교재 라인 참조: netp:tiny:accept
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
                 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
-    doit(connfd);  // line:netp:tiny:doit
-    Close(connfd); // line:netp:tiny:close
+    doit(connfd);  // 교재 라인 참조: netp:tiny:doit
+    Close(connfd); // 교재 라인 참조: netp:tiny:close
   }
 }
