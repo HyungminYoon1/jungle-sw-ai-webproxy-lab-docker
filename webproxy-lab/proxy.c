@@ -9,6 +9,20 @@ static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
 
+typedef struct cache_block
+{
+    char uri[MAXLINE];
+    char *data;
+    size_t size;
+    struct cache_block *prev;
+    struct cache_block *next;
+} cache_block;
+
+static cache_block *cache_head = NULL;
+static cache_block *cache_tail = NULL;
+static size_t cache_used = 0;
+static sem_t cache_mutex;
+
 /* 프록시가 처리할 요청 한 건을 수행한다. */
 void doit(int connfd);
 /* 연결 하나를 전담하는 스레드 진입 함수 */
@@ -19,10 +33,16 @@ int parse_uri(const char *uri, char *host, char *path, char *port);
 void build_http_header(char *http_header, const char *host, const char *path,
                        rio_t *client_rio);
 /* 원 서버 응답을 읽어 클라이언트에 그대로 전달한다. */
-void forward_response(int serverfd, int connfd);
+void forward_response(int serverfd, int connfd, const char *uri);
 /* 프록시 쪽 오류를 HTTP 응답 형태로 클라이언트에 돌려준다. */
 void clienterror(int fd, const char *cause, const char *errnum,
                  const char *shortmsg, const char *longmsg);
+/* 전역 캐시 자료구조를 초기화한다. */
+void cache_init(void);
+/* URI가 캐시에 있으면 복사본을 돌려준다. */
+int cache_find(const char *uri, char **data_out, size_t *size_out);
+/* 응답 전체를 캐시에 저장한다. */
+void cache_store(const char *uri, const char *data, size_t size);
 
 /*
  * main - 반복형 프록시 서버의 진입점
@@ -43,6 +63,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    cache_init();
     listenfd = Open_listenfd(argv[1]);
     while (1)
     {
@@ -85,9 +106,11 @@ void *thread(void *vargp)
 void doit(int connfd)
 {
     int serverfd;
+    size_t cached_size;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
     char host[MAXLINE], path[MAXLINE], port[MAXLINE];
     char http_header[MAXBUF];
+    char *cached_obj;
     rio_t rio;
 
     /* 요청 라인을 읽고 메서드, URI, HTTP 버전을 파싱한다. */
@@ -120,6 +143,14 @@ void doit(int connfd)
     /* 클라이언트 헤더를 읽어가며 원 서버로 보낼 헤더를 다시 구성한다. */
     build_http_header(http_header, host, path, &rio);
 
+    /* 같은 URI의 응답이 캐시에 있으면 원 서버에 가지 않고 바로 돌려준다. */
+    if (cache_find(uri, &cached_obj, &cached_size))
+    {
+        Rio_writen(connfd, cached_obj, cached_size);
+        Free(cached_obj);
+        return;
+    }
+
     /* 파싱한 host, port로 실제 원 서버에 TCP 연결을 건다. */
     /*
      * 원 서버 연결 실패는 현재 요청만 실패시키고,
@@ -135,7 +166,7 @@ void doit(int connfd)
 
     /* 서버에 요청을 보내고, 서버 응답은 클라이언트에 그대로 흘려보낸다. */
     Rio_writen(serverfd, http_header, strlen(http_header));
-    forward_response(serverfd, connfd);
+    forward_response(serverfd, connfd, uri);
     Close(serverfd);
 }
 
@@ -242,16 +273,41 @@ void build_http_header(char *http_header, const char *host, const char *path,
  * forward_response - 원 서버 응답을 클라이언트로 복사한다.
  * 프록시는 응답 본문을 해석하지 않고, 읽은 바이트를 그대로 전달한다.
  */
-void forward_response(int serverfd, int connfd)
+void forward_response(int serverfd, int connfd, const char *uri)
 {
     size_t n;
+    size_t total_size = 0;
     char buf[MAXBUF];
+    char object_buf[MAX_OBJECT_SIZE];
+    int cacheable = 1;
     rio_t server_rio;
 
     Rio_readinitb(&server_rio, serverfd);
     while ((n = Rio_readnb(&server_rio, buf, MAXBUF)) > 0)
     {
+        /* 받은 응답 조각은 먼저 클라이언트에게 즉시 전달한다. */
         Rio_writen(connfd, buf, n);
+
+        if (cacheable)
+        {
+            if (total_size + n <= MAX_OBJECT_SIZE)
+            {
+                /* 객체가 아직 작다면 캐시 후보 버퍼에도 그대로 누적한다. */
+                memcpy(object_buf + total_size, buf, n);
+                total_size += n;
+            }
+            else
+            {
+                /* 최대 객체 크기를 넘는 순간 이 응답은 캐시 대상에서 제외한다. */
+                cacheable = 0;
+            }
+        }
+    }
+
+    if (cacheable)
+    {
+        /* 응답 전체를 끝까지 모은 경우에만 URI 기준으로 캐시에 저장한다. */
+        cache_store(uri, object_buf, total_size);
     }
 }
 
@@ -278,4 +334,143 @@ void clienterror(int fd, const char *cause, const char *errnum,
     snprintf(buf, sizeof(buf), "Content-length: %d\r\n\r\n", (int)strlen(body));
     Rio_writen(fd, buf, strlen(buf));
     Rio_writen(fd, body, strlen(body));
+}
+
+/*
+ * cache_init - 전역 캐시와 락을 준비한다.
+ */
+void cache_init(void)
+{
+    /* 캐시는 비어 있는 이중 연결 리스트로 시작한다. */
+    cache_head = NULL;
+    cache_tail = NULL;
+    cache_used = 0;
+    /* 여러 worker 스레드가 동시에 접근하므로 전역 락을 1로 초기화한다. */
+    Sem_init(&cache_mutex, 0, 1);
+}
+
+/*
+ * cache_find - URI가 캐시에 있으면 응답 복사본을 반환한다.
+ * 찾은 엔트리는 LRU 기준 최신으로 올린다.
+ */
+int cache_find(const char *uri, char **data_out, size_t *size_out)
+{
+    cache_block *block;
+    char *copy;
+
+    /* 탐색과 LRU 갱신은 한 번에 보호해야 하므로 먼저 락을 잡는다. */
+    P(&cache_mutex);
+    for (block = cache_head; block != NULL; block = block->next)
+    {
+        if (!strcmp(block->uri, uri))
+        {
+            if (block != cache_head)
+            {
+                /* 찾은 엔트리를 리스트 앞쪽으로 옮겨 최근 사용으로 표시한다. */
+                if (block->prev)
+                {
+                    block->prev->next = block->next;
+                }
+                if (block->next)
+                {
+                    block->next->prev = block->prev;
+                }
+                if (block == cache_tail)
+                {
+                    cache_tail = block->prev;
+                }
+
+                block->prev = NULL;
+                block->next = cache_head;
+                if (cache_head)
+                {
+                    cache_head->prev = block;
+                }
+                cache_head = block;
+            }
+
+            /*
+             * 락을 오래 잡고 있지 않도록 원본 대신 복사본을 만들어 돌려준다.
+             * 이후 다른 스레드가 캐시를 수정해도 현재 요청은 안전하게 응답할 수 있다.
+             */
+            copy = Malloc(block->size);
+            memcpy(copy, block->data, block->size);
+            *data_out = copy;
+            *size_out = block->size;
+            V(&cache_mutex);
+            return 1;
+        }
+    }
+
+    /* 끝까지 못 찾았으면 miss다. */
+    V(&cache_mutex);
+    return 0;
+}
+
+/*
+ * cache_store - 객체 크기 제한 안의 응답만 저장한다.
+ * 공간이 부족하면 가장 오래 안 쓰인 엔트리부터 제거한다.
+ */
+void cache_store(const char *uri, const char *data, size_t size)
+{
+    cache_block *block;
+    cache_block *victim;
+
+    /* 과제 제한보다 큰 객체는 애초에 캐시에 넣지 않는다. */
+    if (size > MAX_OBJECT_SIZE)
+    {
+        return;
+    }
+
+    P(&cache_mutex);
+
+    /* 다른 스레드가 먼저 같은 URI를 저장했을 수 있으므로 다시 확인한다. */
+    for (block = cache_head; block != NULL; block = block->next)
+    {
+        if (!strcmp(block->uri, uri))
+        {
+            V(&cache_mutex);
+            return;
+        }
+    }
+
+    /* 공간이 부족하면 가장 오래 안 쓰인 tail 엔트리부터 제거한다. */
+    while (cache_used + size > MAX_CACHE_SIZE && cache_tail != NULL)
+    {
+        victim = cache_tail;
+        cache_used -= victim->size;
+        cache_tail = victim->prev;
+        if (cache_tail)
+        {
+            cache_tail->next = NULL;
+        }
+        else
+        {
+            cache_head = NULL;
+        }
+        Free(victim->data);
+        Free(victim);
+    }
+
+    /* 새 응답은 가장 최근에 사용된 항목이므로 리스트 head에 붙인다. */
+    block = Malloc(sizeof(cache_block));
+    strcpy(block->uri, uri);
+    block->data = Malloc(size);
+    memcpy(block->data, data, size);
+    block->size = size;
+    block->prev = NULL;
+    block->next = cache_head;
+
+    if (cache_head)
+    {
+        cache_head->prev = block;
+    }
+    else
+    {
+        cache_tail = block;
+    }
+    cache_head = block;
+    cache_used += size;
+
+    V(&cache_mutex);
 }
