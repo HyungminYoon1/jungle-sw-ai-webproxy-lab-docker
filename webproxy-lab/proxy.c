@@ -11,6 +11,8 @@ static const char *user_agent_hdr =
 
 /* 프록시가 처리할 요청 한 건을 수행한다. */
 void doit(int connfd);
+/* 연결 하나를 전담하는 스레드 진입 함수 */
+void *thread(void *vargp);
 /* 절대 URI에서 호스트, 경로, 포트를 분리한다. */
 int parse_uri(const char *uri, char *host, char *path, char *port);
 /* 원 서버로 전달할 HTTP/1.0 요청 헤더를 다시 구성한다. */
@@ -28,10 +30,12 @@ void clienterror(int fd, const char *cause, const char *errnum,
  */
 int main(int argc, char **argv)
 {
-    int listenfd, connfd;
+    int listenfd;
+    int *connfdp;
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     char hostname[MAXLINE], port[MAXLINE];
+    pthread_t tid;
 
     if (argc != 2)
     {
@@ -43,13 +47,32 @@ int main(int argc, char **argv)
     while (1)
     {
         clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        connfdp = Malloc(sizeof(int));
+        *connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE,
                     port, MAXLINE, 0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-        doit(connfd);
-        Close(connfd);
+
+        /* 각 연결은 분리된 스레드가 처리해서 다른 요청을 막지 않게 한다. */
+        Pthread_create(&tid, NULL, thread, connfdp);
     }
+}
+
+/*
+ * thread - 연결 하나를 처리하는 분리(detached) 스레드
+ * 메인 스레드는 새 연결 수락에 집중하고,
+ * 작업 스레드는 요청 처리 후 자신이 맡은 소켓을 닫는다.
+ */
+void *thread(void *vargp)
+{
+    int connfd = *((int *)vargp);
+
+    Free(vargp);
+    Pthread_detach(Pthread_self());
+
+    doit(connfd);
+    Close(connfd);
+    return NULL;
 }
 
 /*
@@ -98,7 +121,11 @@ void doit(int connfd)
     build_http_header(http_header, host, path, &rio);
 
     /* 파싱한 host, port로 실제 원 서버에 TCP 연결을 건다. */
-    serverfd = Open_clientfd(host, port);
+    /*
+     * 원 서버 연결 실패는 현재 요청만 실패시키고,
+     * 프록시 프로세스 전체는 계속 살아 있도록 non-wrapper 버전을 사용한다.
+     */
+    serverfd = open_clientfd(host, port);
     if (serverfd < 0)
     {
         clienterror(connfd, host, "502", "Bad gateway",
