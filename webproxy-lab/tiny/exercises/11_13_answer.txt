@@ -1,0 +1,86 @@
+11.13 답
+
+문제 의도
+
+Tiny가 클라이언트에게 응답을 쓰는 도중,
+상대방이 연결을 먼저 끊어버리면 write()는 EPIPE 오류를 내고
+프로세스는 SIGPIPE 시그널을 받을 수 있다.
+
+기본 상태에서는 이 상황 때문에 서버 프로세스가 종료될 수 있다.
+
+이 문제의 목표는
+그러한 끊어진 연결 상황에서도 Tiny가 종료하지 않고
+다음 요청을 계속 처리하도록 만드는 것이다.
+
+핵심 아이디어
+
+1. SIGPIPE 시그널을 무시한다.
+2. write 계열 함수가 EPIPE를 반환해도 프로세스를 종료하지 않게 한다.
+
+왜 SIGPIPE 무시만으로는 부족한가
+
+csapp.c의 Rio_writen() 래퍼는 내부 write가 실패하면
+unix_error()를 호출해서 프로세스를 종료한다.
+
+즉 SIGPIPE를 무시하더라도,
+EPIPE가 발생했을 때 Rio_writen()을 그대로 쓰면 Tiny는 여전히 종료될 수 있다.
+
+구현 방식
+
+1. main()에서 SIGPIPE를 무시한다.
+
+Signal(SIGPIPE, SIG_IGN);
+
+2. tiny_11_13.c 안에 safe_writen() 함수를 추가한다.
+
+이 함수는 내부적으로 rio_writen()을 호출하고,
+오류가 났을 때 errno가 EPIPE이면 그냥 -1을 반환한다.
+즉 끊어진 연결에 쓰려다가 실패해도 프로세스를 죽이지 않는다.
+
+예:
+
+int safe_writen(int fd, void *usrbuf, size_t n)
+{
+    if (rio_writen(fd, usrbuf, n) != (ssize_t)n) {
+        if (errno == EPIPE)
+            return -1;
+        unix_error("safe_writen error");
+    }
+    return 0;
+}
+
+3. 응답을 쓰는 부분을 Rio_writen() 대신 safe_writen()으로 바꾼다.
+
+- clienterror()
+- serve_static()
+- serve_dynamic()
+
+이렇게 하면 클라이언트가 중간에 연결을 끊더라도
+현재 요청만 실패하고 서버 전체는 계속 살아남는다.
+
+검증 방법
+
+1. 빌드
+
+cd /workspaces/jungle-sw-ai-webproxy-lab-docker/webproxy-lab/tiny
+gcc -I . -g -Wall -o tiny_11_13 exercises/tiny_11_13.c csapp.o -lpthread
+
+2. 실행
+
+./tiny_11_13 8000
+
+3. 클라이언트가 요청 직후 바로 연결을 끊는 상황 재현
+
+예를 들어 큰 정적 파일(godzilla.gif)을 요청한 뒤 소켓을 바로 닫는다.
+
+4. 기대 결과
+
+- 서버가 SIGPIPE로 종료되지 않아야 한다.
+- 다음 요청도 계속 받을 수 있어야 한다.
+
+정리
+
+11.13의 핵심은
+끊어진 연결에 write할 때 발생하는 SIGPIPE/EPIPE를
+프로세스 종료로 이어지지 않게 막아서
+Tiny가 견고하게 계속 실행되도록 만드는 것이다.

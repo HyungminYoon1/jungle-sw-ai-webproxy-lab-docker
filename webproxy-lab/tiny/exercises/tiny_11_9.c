@@ -190,11 +190,12 @@ void serve_static(int fd, char *filename, int filesize)
     printf("%s", buf);
 
     // 클라이언트에게 응답 body를 전송
-    srcfd = Open(filename, O_RDONLY, 0); 
-    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 요청한 파일을 가상메모리 영역으로 매핑
-    Close(srcfd); // 메모리 누수 방지 - 파일을 메모리로 매핑한 후에 srcfd 식별자는 불필요
+    srcfd = Open(filename, O_RDONLY, 0);
+    srcp = Malloc(filesize);
+    Rio_readn(srcfd, srcp, filesize);
+    Close(srcfd);
     Rio_writen(fd, srcp, filesize);
-    Munmap(srcp, filesize);
+    Free(srcp);
 }
 
 // 파일 이름으로부터 파일 타입을 얻음

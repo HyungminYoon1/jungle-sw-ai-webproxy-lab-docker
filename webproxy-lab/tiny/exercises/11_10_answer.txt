@@ -1,0 +1,86 @@
+11.10 답
+
+문제 의도
+
+11.10 A는 사용자가 두 개의 숫자를 직접 입력할 수 있는 HTML form을 만들고,
+그 form이 GET 방식으로 CGI 프로그램에 요청을 보내도록 하는 것이다.
+
+11.10 B는 실제 브라우저에서 그 form을 열고,
+숫자를 입력해서 제출한 뒤, CGI가 계산한 결과를 브라우저에 표시하는지 확인하는 것이다.
+
+구현 방식
+
+원본 adder.c는 QUERY_STRING을 1&2 같은 단순 형식으로 처리한다.
+하지만 HTML form을 사용하면 브라우저는 보통 num1=1&num2=2 형식으로 보낸다.
+
+따라서 원본 adder.c를 직접 바꾸면 기존 Tiny/adder 동작과 충돌할 수 있으므로,
+11.10 전용 CGI 프로그램을 별도로 만들었다.
+
+추가한 파일
+
+1. tiny/cgi-bin/adder_11_10.c
+- HTML form이 보내는 num1=...&num2=... 형식을 처리하는 CGI 프로그램
+
+2. tiny/exercises/11_10a_adder_form.html
+- 연습 문제용 원본 form 파일
+
+3. tiny/adder_11_10.html
+- Tiny가 정적 파일로 직접 서빙할 수 있도록 둔 form 페이지 복사본
+
+동작 구조
+
+1. 브라우저가 /adder_11_10.html 을 연다.
+2. 사용자가 두 입력칸에 숫자를 입력한다.
+3. 제출 버튼을 누르면 브라우저가
+   /cgi-bin/adder_11_10?num1=12&num2=34
+   같은 GET 요청을 보낸다.
+4. adder_11_10.c 가 QUERY_STRING을 파싱해서 두 수를 더한다.
+5. 결과 HTML을 응답으로 브라우저에 보여준다.
+
+검증 방법
+
+1. CGI 빌드
+
+cd /workspaces/jungle-sw-ai-webproxy-lab-docker/webproxy-lab/tiny/cgi-bin
+make
+
+2. Tiny 빌드
+
+cd /workspaces/jungle-sw-ai-webproxy-lab-docker/webproxy-lab/tiny
+make
+
+3. Tiny 실행
+
+./tiny 8000
+
+4. 브라우저에서 form 열기
+
+http://localhost:8000/adder_11_10.html
+
+5. 입력칸에 숫자 입력 후 제출
+
+예:
+- 첫 번째 숫자: 12
+- 두 번째 숫자: 34
+
+6. 결과 확인
+
+브라우저 응답 본문에 다음과 비슷한 내용이 보여야 한다.
+
+The answer is: 12 + 34 = 46
+
+curl로 확인하는 방법
+
+curl "http://127.0.0.1:8000/cgi-bin/adder_11_10?num1=12&num2=34"
+
+기대 결과
+
+- HTTP 200 응답
+- Content-type: text/html
+- 결과 본문에 12 + 34 = 46 출력
+
+정리
+
+11.10의 핵심은
+HTML form과 CGI 프로그램의 입력 형식을 맞추고,
+브라우저에서 실제로 입력/제출/응답 확인까지 이어지는 흐름을 완성하는 것이다.

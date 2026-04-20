@@ -11,10 +11,11 @@
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 int parse_uri(char *uri, char *filename, char *cgiargs);
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *filename, int filesize, int head_only);
 void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
-void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+void serve_dynamic(int fd, char *filename, char *cgiargs, int head_only);
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
+                 char *longmsg, int head_only);
 
 /*
  * 반복실행 서버로 명령줄에서 넘겨받은 포트로의 연결 요청을 듣는다.
@@ -53,7 +54,7 @@ int main(int argc, char **argv)
  */
 void doit(int fd)
 {
-    int is_static;
+    int is_static, head_only;
     struct stat sbuf;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
     char filename[MAXLINE], cgiargs[MAXLINE];
@@ -66,12 +67,13 @@ void doit(int fd)
     printf("%s", buf);
     sscanf(buf, "%s %s %s", method, uri, version);
 
-    /* Tiny는 GET 메서드만 처리한다. */
-    if (strcasecmp(method, "GET")) {
+    /* Tiny는 GET과 HEAD 메서드만 처리한다. */
+    if (strcasecmp(method, "GET") && strcasecmp(method, "HEAD")) {
         clienterror(fd, method, "501", "Not implemented",
-                    "Tiny does not implement this method");
+                    "Tiny does not implement this method", 0);
         return;
     }
+    head_only = !strcasecmp(method, "HEAD");
 
     read_requesthdrs(&rio);
 
@@ -79,7 +81,7 @@ void doit(int fd)
     is_static = parse_uri(uri, filename, cgiargs);
     if (stat(filename, &sbuf) < 0) {
         clienterror(fd, filename, "404", "Not found",
-                    "Tiny couldn't find this file");
+                    "Tiny couldn't find this file", head_only);
         return;
     }
 
@@ -87,19 +89,19 @@ void doit(int fd)
         /* 일반 파일이면서 읽기 권한이 있어야 정적 파일로 제공할 수 있다. */
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
             clienterror(fd, filename, "403", "Forbidden",
-                        "Tiny couldn't read the file");
+                        "Tiny couldn't read the file", head_only);
             return;
         }
-        serve_static(fd, filename, sbuf.st_size);
+        serve_static(fd, filename, sbuf.st_size, head_only);
     }
     else { // 동적 컨텐츠 제공
         /* CGI 프로그램은 일반 파일이면서 실행 권한이 있어야 한다. */
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
             clienterror(fd, filename, "403", "Forbidden",
-                        "Tiny couldn't run the CGI program");
+                        "Tiny couldn't run the CGI program", head_only);
             return;
         }
-        serve_dynamic(fd, filename, cgiargs);
+        serve_dynamic(fd, filename, cgiargs, head_only);
     }
 }
 
@@ -145,7 +147,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
 
 // 오류 응답 처리
 void clienterror(int fd, char *cause, char *errnum,
-                char *shortmsg, char *longmsg)
+                char *shortmsg, char *longmsg, int head_only)
 {
     char buf[MAXLINE], body[MAXBUF];
 
@@ -165,11 +167,12 @@ void clienterror(int fd, char *cause, char *errnum,
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
     Rio_writen(fd, buf, strlen(buf));
-    Rio_writen(fd, body, strlen(body));
+    if (!head_only)
+        Rio_writen(fd, body, strlen(body));
 }
 
 // 정적 파일 제공
-void serve_static(int fd, char *filename, int filesize)
+void serve_static(int fd, char *filename, int filesize, int head_only)
 {
     int srcfd;
     int len;
@@ -190,6 +193,9 @@ void serve_static(int fd, char *filename, int filesize)
     printf("%s", buf);
 
     // 클라이언트에게 응답 body를 전송
+    if (head_only)
+        return;
+
     srcfd = Open(filename, O_RDONLY, 0); 
     srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 요청한 파일을 가상메모리 영역으로 매핑
     Close(srcfd); // 메모리 누수 방지 - 파일을 메모리로 매핑한 후에 srcfd 식별자는 불필요
@@ -215,7 +221,7 @@ void get_filetype(char *filename, char *filetype)
 }
 
 // 동적 컨텐츠 제공
-void serve_dynamic(int fd, char *filename, char *cgiargs)
+void serve_dynamic(int fd, char *filename, char *cgiargs, int head_only)
 {
     char buf[MAXLINE], *emptylist[] = { NULL };
 
@@ -224,6 +230,12 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Server: Tiny Web Server\r\n");
     Rio_writen(fd, buf, strlen(buf));
+
+    if (head_only) {
+        sprintf(buf, "Connection: close\r\n\r\n");
+        Rio_writen(fd, buf, strlen(buf));
+        return;
+    }
 
     if (Fork() == 0) { // 자식
         // 실제 서버는 모든 CGI 변수를 여기에 세팅

@@ -1,0 +1,94 @@
+11.12 답
+
+문제 의도
+
+원본 Tiny는 GET 방식의 동적 콘텐츠만 처리한다.
+이 문제에서는 HTTP POST 메소드로 전송된 요청 본문까지 읽어서
+CGI 프로그램이 처리할 수 있도록 Tiny를 확장해야 한다.
+
+핵심 아이디어
+
+POST 요청은 URL의 QUERY_STRING이 아니라
+요청 본문(body)에 데이터가 들어간다.
+
+따라서 Tiny는 다음을 추가로 해야 한다.
+
+1. 요청 헤더에서 Content-length를 읽는다.
+2. 헤더 뒤의 요청 본문을 읽는다.
+3. CGI 자식 프로세스의 표준입력(stdin)으로 본문을 넘긴다.
+4. CGI 프로그램은 stdin에서 본문을 읽어 처리한다.
+
+구현 방식
+
+1. tiny_11_12.c
+
+- GET뿐 아니라 POST도 허용한다.
+- read_requesthdrs()에서 Content-length 값을 추출한다.
+- POST 요청이면 Rio_readnb()로 요청 본문을 읽는다.
+- serve_dynamic()에서 pipe()를 만들고,
+  부모가 POST 본문을 pipe에 쓰고,
+  자식은 dup2(pipefd[0], STDIN_FILENO)로 stdin을 pipe에 연결한다.
+- 자식은 REQUEST_METHOD=POST, CONTENT_LENGTH 값을 환경변수로 설정한 뒤 CGI를 실행한다.
+
+2. adder_11_12.c
+
+- CONTENT_LENGTH 환경변수를 읽는다.
+- stdin에서 POST 본문을 읽는다.
+- 예: num1=12&num2=34
+- 이 값을 파싱해서 두 숫자를 더한다.
+- 계산 결과를 HTML 응답으로 출력한다.
+
+3. adder_11_12.html
+
+- Tiny가 정적 파일로 서빙하는 POST form 페이지이다.
+- method=\"POST\" 로 /cgi-bin/adder_11_12 에 요청을 보낸다.
+
+추가한 파일
+
+1. tiny/exercises/tiny_11_12.c
+- 11.12 실험용 Tiny 복사본
+
+2. tiny/cgi-bin/adder_11_12.c
+- POST 본문을 처리하는 CGI 프로그램
+
+3. tiny/adder_11_12.html
+- 브라우저에서 직접 열 수 있는 POST form 페이지
+
+검증 방법
+
+1. CGI 빌드
+
+cd /workspaces/jungle-sw-ai-webproxy-lab-docker/webproxy-lab/tiny/cgi-bin
+make
+
+2. Tiny 빌드
+
+cd /workspaces/jungle-sw-ai-webproxy-lab-docker/webproxy-lab/tiny
+gcc -I . -g -Wall -o tiny_11_12 exercises/tiny_11_12.c csapp.o -lpthread
+
+3. Tiny 실행
+
+./tiny_11_12 8000
+
+4. 브라우저에서 form 열기
+
+http://localhost:8000/adder_11_12.html
+
+5. 숫자 입력 후 제출
+
+예:
+- 첫 번째 숫자: 12
+- 두 번째 숫자: 34
+
+6. 기대 결과
+
+응답 페이지에 다음과 비슷한 내용이 보여야 한다.
+
+POST_BODY=num1=12&num2=34
+The answer is: 12 + 34 = 46
+
+정리
+
+11.12의 핵심은
+Tiny가 POST 요청의 본문을 읽어서 CGI에 전달하고,
+CGI가 그 본문을 직접 읽어 동적 콘텐츠를 생성하게 만드는 것이다.

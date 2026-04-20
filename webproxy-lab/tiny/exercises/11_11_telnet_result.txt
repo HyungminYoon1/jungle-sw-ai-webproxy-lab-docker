@@ -1,0 +1,6 @@
+HTTP/1.0 200 OK
+Server: Tiny Web Server
+Connection: close
+Content-length: 127
+Content-type: text/html
+

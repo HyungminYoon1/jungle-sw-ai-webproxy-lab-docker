@@ -1,0 +1,23 @@
+11.9 답
+
+원본 Tiny의 serve_static()은 요청한 정적 파일을
+Mmap()으로 가상 메모리에 매핑한 뒤, Rio_writen()으로 클라이언트에게 전송한다.
+
+이 문제에서는 mmap 대신 다음 방식으로 바꾼다.
+
+1. Malloc(filesize)로 파일 크기만큼 메모리를 동적으로 할당한다.
+2. Rio_readn(srcfd, srcp, filesize)로 파일 내용을 버퍼에 읽어들인다.
+3. Rio_writen(fd, srcp, filesize)로 클라이언트 연결 식별자에게 쓴다.
+4. 전송이 끝나면 Free(srcp)로 메모리를 해제한다.
+
+즉, 핵심 수정은 serve_static() 안의 본문 전송 부분을 다음과 같이 바꾸는 것이다.
+
+srcfd = Open(filename, O_RDONLY, 0);
+srcp = Malloc(filesize);
+Rio_readn(srcfd, srcp, filesize);
+Close(srcfd);
+Rio_writen(fd, srcp, filesize);
+Free(srcp);
+
+정리하면, 11.9의 목적은 정적 파일 전송을
+메모리 매핑 기반 방식에서 동적 버퍼 복사 방식으로 바꾸는 것이다.

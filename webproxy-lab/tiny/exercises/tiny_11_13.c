@@ -15,6 +15,7 @@ void serve_static(int fd, char *filename, int filesize);
 void get_filetype(char *filename, char *filetype);
 void serve_dynamic(int fd, char *filename, char *cgiargs);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+int safe_writen(int fd, void *usrbuf, size_t n);
 
 /*
  * 반복실행 서버로 명령줄에서 넘겨받은 포트로의 연결 요청을 듣는다.
@@ -34,6 +35,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    Signal(SIGPIPE, SIG_IGN);
     listenfd = Open_listenfd(argv[1]);
     while (1)
     {
@@ -45,6 +47,16 @@ int main(int argc, char **argv)
         doit(connfd);  // 교재 라인 참조: netp:tiny:doit
         Close(connfd); // 교재 라인 참조: netp:tiny:close
     }
+}
+
+int safe_writen(int fd, void *usrbuf, size_t n)
+{
+    if (rio_writen(fd, usrbuf, n) != (ssize_t)n) {
+        if (errno == EPIPE)
+            return -1;
+        unix_error("safe_writen error");
+    }
+    return 0;
 }
 
 /*
@@ -160,12 +172,15 @@ void clienterror(int fd, char *cause, char *errnum,
 
     // HTTP 응답 프린트
     sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-    Rio_writen(fd, buf, strlen(buf));
+    if (safe_writen(fd, buf, strlen(buf)) < 0)
+        return;
     sprintf(buf, "Content-type: text/html\r\n");
-    Rio_writen(fd, buf, strlen(buf));
+    if (safe_writen(fd, buf, strlen(buf)) < 0)
+        return;
     sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
-    Rio_writen(fd, buf, strlen(buf));
-    Rio_writen(fd, body, strlen(body));
+    if (safe_writen(fd, buf, strlen(buf)) < 0)
+        return;
+    safe_writen(fd, body, strlen(body));
 }
 
 // 정적 파일 제공
@@ -185,7 +200,8 @@ void serve_static(int fd, char *filename, int filesize)
                     "Content-length: %d\r\n", filesize);
     len += snprintf(buf + len, sizeof(buf) - len,
                     "Content-type: %s\r\n\r\n", filetype);
-    Rio_writen(fd, buf, strlen(buf));
+    if (safe_writen(fd, buf, strlen(buf)) < 0)
+        return;
     printf("Response headers:\n");
     printf("%s", buf);
 
@@ -193,7 +209,7 @@ void serve_static(int fd, char *filename, int filesize)
     srcfd = Open(filename, O_RDONLY, 0); 
     srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 요청한 파일을 가상메모리 영역으로 매핑
     Close(srcfd); // 메모리 누수 방지 - 파일을 메모리로 매핑한 후에 srcfd 식별자는 불필요
-    Rio_writen(fd, srcp, filesize);
+    safe_writen(fd, srcp, filesize);
     Munmap(srcp, filesize);
 }
 
@@ -221,9 +237,11 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
 
     // HTTP 응답의 첫 번째 부분을 반환
     sprintf(buf, "HTTP/1.0 200 Ok\r\n");
-    Rio_writen(fd, buf, strlen(buf));
+    if (safe_writen(fd, buf, strlen(buf)) < 0)
+        return;
     sprintf(buf, "Server: Tiny Web Server\r\n");
-    Rio_writen(fd, buf, strlen(buf));
+    if (safe_writen(fd, buf, strlen(buf)) < 0)
+        return;
 
     if (Fork() == 0) { // 자식
         // 실제 서버는 모든 CGI 변수를 여기에 세팅

@@ -15,6 +15,7 @@ void serve_static(int fd, char *filename, int filesize);
 void get_filetype(char *filename, char *filetype);
 void serve_dynamic(int fd, char *filename, char *cgiargs);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+void sigchld_handler(int sig);
 
 /*
  * 반복실행 서버로 명령줄에서 넘겨받은 포트로의 연결 요청을 듣는다.
@@ -34,6 +35,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    Signal(SIGCHLD, sigchld_handler);
     listenfd = Open_listenfd(argv[1]);
     while (1)
     {
@@ -45,6 +47,16 @@ int main(int argc, char **argv)
         doit(connfd);  // 교재 라인 참조: netp:tiny:doit
         Close(connfd); // 교재 라인 참조: netp:tiny:close
     }
+}
+
+void sigchld_handler(int sig)
+{
+    int olderrno = errno;
+
+    (void)sig;
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+        ;
+    errno = olderrno;
 }
 
 /*
@@ -231,5 +243,4 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
         Dup2(fd, STDOUT_FILENO); // stdout 을 클라이언트에게 리다이렉트한다.
         Execve(filename, emptylist, environ); // CGI 프로그램을 실행한다.
     }
-    wait(NULL); // 부모 프로세스가 자식 프로세스가 끝나기를 기다린다. - 자식 프로세스가 종료돼도 부모가 아직 종료 상태를 회수하지 않으면 zombie process가 남기 때문
 }

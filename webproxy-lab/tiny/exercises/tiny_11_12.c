@@ -9,11 +9,12 @@
 #include "csapp.h"
 
 void doit(int fd);
-void read_requesthdrs(rio_t *rp);
+void read_requesthdrs(rio_t *rp, int *content_length);
 int parse_uri(char *uri, char *filename, char *cgiargs);
 void serve_static(int fd, char *filename, int filesize);
 void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *filename, char *cgiargs,
+                   char *method, char *postbody, int content_length);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
 /*
@@ -53,10 +54,10 @@ int main(int argc, char **argv)
  */
 void doit(int fd)
 {
-    int is_static;
+    int is_static, content_length = 0;
     struct stat sbuf;
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char filename[MAXLINE], cgiargs[MAXLINE];
+    char filename[MAXLINE], cgiargs[MAXLINE], postbody[MAXBUF];
     rio_t rio;
 
     /* 요청 라인을 읽고 메서드, URI, HTTP 버전을 파싱한다. */
@@ -66,14 +67,21 @@ void doit(int fd)
     printf("%s", buf);
     sscanf(buf, "%s %s %s", method, uri, version);
 
-    /* Tiny는 GET 메서드만 처리한다. */
-    if (strcasecmp(method, "GET")) {
+    /* Tiny는 GET과 POST 메서드만 처리한다. */
+    if (strcasecmp(method, "GET") && strcasecmp(method, "POST")) {
         clienterror(fd, method, "501", "Not implemented",
                     "Tiny does not implement this method");
         return;
     }
 
-    read_requesthdrs(&rio);
+    read_requesthdrs(&rio, &content_length);
+    postbody[0] = '\0';
+    if (!strcasecmp(method, "POST") && content_length > 0) {
+        if (content_length >= MAXBUF)
+            content_length = MAXBUF - 1;
+        Rio_readnb(&rio, postbody, content_length);
+        postbody[content_length] = '\0';
+    }
 
     /* URI를 파일 이름으로 바꾸고, 정적/동적 콘텐츠 여부를 결정한다. */
     is_static = parse_uri(uri, filename, cgiargs);
@@ -84,6 +92,11 @@ void doit(int fd)
     }
 
     if (is_static) { // 정적 컨텐츠 제공
+        if (!strcasecmp(method, "POST")) {
+            clienterror(fd, method, "501", "Not implemented",
+                        "Tiny does not implement POST for static content");
+            return;
+        }
         /* 일반 파일이면서 읽기 권한이 있어야 정적 파일로 제공할 수 있다. */
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
             clienterror(fd, filename, "403", "Forbidden",
@@ -99,19 +112,22 @@ void doit(int fd)
                         "Tiny couldn't run the CGI program");
             return;
         }
-        serve_dynamic(fd, filename, cgiargs);
+        serve_dynamic(fd, filename, cgiargs, method, postbody, content_length);
     }
 }
 
 // 헤더 읽기 (Tiny 서버에서는 요청 헤더 내의 어떤 정보도 사용하지 않음.)
-void read_requesthdrs(rio_t *rp)
+void read_requesthdrs(rio_t *rp, int *content_length)
 {
     char buf[MAXLINE];
 
+    *content_length = 0;
     Rio_readlineb(rp, buf, MAXLINE);
     while(strcmp(buf, "\r\n")) {
-        rio_readlineb(rp, buf, MAXLINE);
         printf("%s", buf);
+        if (!strncasecmp(buf, "Content-length:", 15))
+            *content_length = atoi(buf + 15);
+        Rio_readlineb(rp, buf, MAXLINE);
     }
     return;
 }
@@ -215,9 +231,11 @@ void get_filetype(char *filename, char *filetype)
 }
 
 // 동적 컨텐츠 제공
-void serve_dynamic(int fd, char *filename, char *cgiargs)
+void serve_dynamic(int fd, char *filename, char *cgiargs,
+                   char *method, char *postbody, int content_length)
 {
     char buf[MAXLINE], *emptylist[] = { NULL };
+    int pipefd[2];
 
     // HTTP 응답의 첫 번째 부분을 반환
     sprintf(buf, "HTTP/1.0 200 Ok\r\n");
@@ -225,11 +243,31 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
     sprintf(buf, "Server: Tiny Web Server\r\n");
     Rio_writen(fd, buf, strlen(buf));
 
+    if (!strcasecmp(method, "POST") && pipe(pipefd) < 0)
+        unix_error("pipe error");
+
     if (Fork() == 0) { // 자식
         // 실제 서버는 모든 CGI 변수를 여기에 세팅
-        setenv("QUERY_STRING", cgiargs, 1);
+        if (!strcasecmp(method, "POST")) {
+            sprintf(buf, "%d", content_length);
+            setenv("CONTENT_LENGTH", buf, 1);
+            setenv("REQUEST_METHOD", "POST", 1);
+            setenv("QUERY_STRING", "", 1);
+            dup2(pipefd[0], STDIN_FILENO);
+            Close(pipefd[0]);
+            Close(pipefd[1]);
+        } else {
+            setenv("REQUEST_METHOD", "GET", 1);
+            setenv("CONTENT_LENGTH", "0", 1);
+            setenv("QUERY_STRING", cgiargs, 1);
+        }
         Dup2(fd, STDOUT_FILENO); // stdout 을 클라이언트에게 리다이렉트한다.
         Execve(filename, emptylist, environ); // CGI 프로그램을 실행한다.
+    }
+    if (!strcasecmp(method, "POST")) {
+        Close(pipefd[0]);
+        Rio_writen(pipefd[1], postbody, content_length);
+        Close(pipefd[1]);
     }
     wait(NULL); // 부모 프로세스가 자식 프로세스가 끝나기를 기다린다. - 자식 프로세스가 종료돼도 부모가 아직 종료 상태를 회수하지 않으면 zombie process가 남기 때문
 }

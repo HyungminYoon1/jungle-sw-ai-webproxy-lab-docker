@@ -1,0 +1,94 @@
+11.6 D
+
+브라우저가 Tiny에 보낸 HTTP 요청 헤더의 의미는 다음과 같다.
+
+1. GET / HTTP/1.1
+- 요청 라인(Request-Line)이다.
+- GET 메서드로 루트 경로 / 자원을 요청한다는 뜻이다.
+- HTTP 버전은 HTTP/1.1이다.
+- 참고: RFC 2616 5.1
+  https://www.rfc-editor.org/rfc/rfc2616#section-5.1
+
+2. Host: localhost:8000
+- 요청 대상 서버의 호스트 이름과 포트를 나타낸다.
+- HTTP/1.1에서는 Host 헤더가 필수이다.
+- 가상 호스트 기반 서버가 어떤 사이트를 요청한 것인지 구분할 때 중요하다.
+- 참고: RFC 2616 14.23
+  https://www.rfc-editor.org/rfc/rfc2616#section-14.23
+
+3. Connection: keep-alive
+- 현재 TCP 연결을 요청 후 바로 끊지 않고 유지하고 싶다는 의미이다.
+- 지속 연결(persistent connection)을 통해 같은 연결을 여러 요청/응답에 재사용할 수 있다.
+- 참고: RFC 2616 14.10, 8.1
+  https://www.rfc-editor.org/rfc/rfc2616#section-14.10
+  https://www.rfc-editor.org/rfc/rfc2616#section-8.1
+
+4. sec-ch-ua
+- 브라우저의 User-Agent Client Hints 정보이다.
+- 브라우저 계열과 브랜드 정보를 서버에 전달한다.
+- 최신 브라우저 확장 헤더이며 RFC 2616에 직접 정의된 항목은 아니다.
+
+5. sec-ch-ua-mobile
+- 모바일 환경인지 여부를 서버에 알리는 Client Hints 헤더이다.
+- 값 ?0 는 모바일 환경이 아님을 뜻한다.
+- RFC 2616 기본 헤더는 아니다.
+
+6. sec-ch-ua-platform
+- 브라우저가 실행 중인 운영체제 플랫폼 정보를 나타낸다.
+- 여기서는 Windows 환경임을 서버에 알린다.
+- RFC 2616 기본 헤더는 아니다.
+
+7. Upgrade-Insecure-Requests: 1
+- 가능하면 더 안전한(HTTPS) 형태의 자원으로 처리되기를 선호한다는 의미이다.
+- 최신 브라우저 확장 헤더이며 RFC 2616에는 없다.
+
+8. User-Agent: ...
+- 어떤 브라우저와 렌더링 엔진이 요청을 보냈는지 나타낸다.
+- 서버가 클라이언트 종류를 식별하거나 호환성을 고려할 때 참고할 수 있다.
+- 참고: RFC 2616 14.43
+  https://www.rfc-editor.org/rfc/rfc2616#section-14.43
+
+9. Accept: ...
+- 브라우저가 받아들일 수 있는 응답 미디어 타입을 서버에 알린다.
+- HTML, XML, 이미지 등을 어떤 우선순위로 선호하는지 나타낸다.
+- q 값은 선호도를 의미한다.
+- 참고: RFC 2616 14.1
+  https://www.rfc-editor.org/rfc/rfc2616#section-14.1
+
+10. Sec-Fetch-Site: none
+- 이 요청이 어떤 사이트 맥락에서 발생했는지 나타낸다.
+- 주소창 직접 입력, 새 탭 열기 같은 최상위 탐색에 가까운 요청임을 의미한다.
+- 최신 브라우저 확장 헤더이며 RFC 2616에는 없다.
+
+11. Sec-Fetch-Mode: navigate
+- 브라우저가 이번 요청을 문서 탐색(navigation) 용도로 보냈음을 나타낸다.
+- 최신 브라우저 확장 헤더이며 RFC 2616에는 없다.
+
+12. Sec-Fetch-User: ?1
+- 사용자 직접 동작에 의해 발생한 탐색 요청임을 나타낸다.
+- 최신 브라우저 확장 헤더이며 RFC 2616에는 없다.
+
+13. Sec-Fetch-Dest: document
+- 요청 결과가 문서(document)로 사용될 것임을 나타낸다.
+- 최신 브라우저 확장 헤더이며 RFC 2616에는 없다.
+
+14. Accept-Encoding: gzip, deflate, br, zstd
+- 브라우저가 처리할 수 있는 콘텐츠 인코딩 방식을 서버에 알린다.
+- 서버는 이 중 하나로 압축하여 응답할 수 있다.
+- 참고: RFC 2616 14.3
+  https://www.rfc-editor.org/rfc/rfc2616#section-14.3
+
+15. Accept-Language: ko,en;q=0.9,en-US;q=0.8
+- 브라우저가 선호하는 응답 언어를 나타낸다.
+- 여기서는 한국어를 가장 선호하고, 그다음 영어를 허용한다는 뜻이다.
+- 참고: RFC 2616 14.4
+  https://www.rfc-editor.org/rfc/rfc2616#section-14.4
+
+16. Cookie: ...
+- 이전에 서버가 설정한 세션/상태 정보를 다시 서버에 전달한다.
+- 로그인 유지, 세션 식별 등에 사용된다.
+- Cookie 헤더는 RFC 2616 기본 본문이 아니라 별도 쿠키 규격에서 정의된다.
+
+정리:
+- RFC 2616에 직접 정의된 대표 요청 헤더는 Host, Connection, User-Agent, Accept, Accept-Encoding, Accept-Language 등이다.
+- sec-ch-ua, Sec-Fetch-* 같은 항목은 최신 브라우저가 추가한 확장 헤더이다.

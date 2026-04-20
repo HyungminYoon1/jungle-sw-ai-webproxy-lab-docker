@@ -1,0 +1,5 @@
+11.7 답:
+get_filetype() 함수에 다음 분기를 추가한다.
+
+else if (strstr(filename, ".mpg"))
+    strcpy(filetype, "video/mpeg");
