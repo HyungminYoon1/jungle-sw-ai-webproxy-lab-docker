@@ -1,6 +1,11 @@
 # Targets
 tiny/tiny
+tiny/tiny_*
+!tiny/tiny.c
 tiny/cgi-bin/adder
+tiny/cgi-bin/adder_*
+!tiny/cgi-bin/*.c
+!tiny/cgi-bin/Makefile
 proxy
 
 # MacOS
